@@ -25,8 +25,12 @@ import org.deeplearning4j.graph.graph.VertexSequence;
 import org.deeplearning4j.graph.iterator.RandomWalkIterator;
 import org.deeplearning4j.graph.iterator.GraphWalkIterator;
 
+import java.util.NavigableMap;
+import java.util.TreeMap;
 import java.util.NoSuchElementException;
 import java.util.Random;
+import java.util.Arrays;
+import java.util.ArrayList;
 
 
 /**Given a graph, iterate through random walks on that graph of a specified length.
@@ -34,7 +38,7 @@ import java.util.Random;
  * of the starting nodes is randomized.
  * @author Alex Black
  */
-public class MyRandomWalkIterator<V> implements GraphWalkIterator<V> {
+public class Node2VecIterator<V> implements GraphWalkIterator<V> {
 
     private final IGraph<V, ?> graph;
     private final int walkLength;
@@ -42,13 +46,14 @@ public class MyRandomWalkIterator<V> implements GraphWalkIterator<V> {
     private final int firstVertex;
     private final int lastVertex;
     private final int numberOfWalks;
-
+    private double p;
+    private double q;
 
     private int position;
     private Random rng;
     private int[] order;
 
-    public MyRandomWalkIterator(IGraph<V, ?> graph, int walkLength) {
+    public Node2VecIterator(IGraph<V, ?> graph, int walkLength) {
         this(graph, walkLength, System.currentTimeMillis(), NoEdgeHandling.EXCEPTION_ON_DISCONNECTED);
     }
 
@@ -57,7 +62,7 @@ public class MyRandomWalkIterator<V> implements GraphWalkIterator<V> {
      * walks on graphs with vertices containing having no edges, or no outgoing edges (for directed graphs)
      * @see #RandomWalkIterator(IGraph, int, long, NoEdgeHandling)
      */
-    public MyRandomWalkIterator(IGraph<V, ?> graph, int walkLength, long rngSeed) {
+    public Node2VecIterator(IGraph<V, ?> graph, int walkLength, long rngSeed) {
         this(graph, walkLength, rngSeed, NoEdgeHandling.EXCEPTION_ON_DISCONNECTED);
     }
 
@@ -67,8 +72,8 @@ public class MyRandomWalkIterator<V> implements GraphWalkIterator<V> {
      * @param rngSeed seed for randomization
      * @param mode mode for handling random walks from vertices with either no edges, or no outgoing edges (for directed graphs)
      */
-    public MyRandomWalkIterator(IGraph<V, ?> graph, int walkLength, long rngSeed, NoEdgeHandling mode) {
-        this(graph, walkLength, rngSeed, mode, 0, graph.numVertices(), 10);
+    public Node2VecIterator(IGraph<V, ?> graph, int walkLength, long rngSeed, NoEdgeHandling mode) {
+        this(graph, walkLength, rngSeed, mode, 0, graph.numVertices(), 10, 0.5, 0.5);
     }
 
     /**Constructor used to generate random walks starting at a subset of the vertices in the graph. Order of starting
@@ -80,8 +85,8 @@ public class MyRandomWalkIterator<V> implements GraphWalkIterator<V> {
      * @param firstVertex first vertex index (inclusive) to start random walks from
      * @param lastVertex last vertex index (exclusive) to start random walks from
      */
-    public MyRandomWalkIterator(IGraph<V, ?> graph, int walkLength, long rngSeed, NoEdgeHandling mode, int firstVertex,
-                    int lastVertex, int numberOfWalks) {
+    public Node2VecIterator(IGraph<V, ?> graph, int walkLength, long rngSeed, NoEdgeHandling mode, int firstVertex,
+                    int lastVertex, int numberOfWalks, double p, double q) {
         this.graph = graph;
         this.walkLength = walkLength;
         this.rng = new Random(rngSeed);
@@ -89,6 +94,8 @@ public class MyRandomWalkIterator<V> implements GraphWalkIterator<V> {
         this.firstVertex = firstVertex;
         this.lastVertex = lastVertex;
         this.numberOfWalks = numberOfWalks;
+        this.p = p;
+        this.q = q;
 
         order = new int[lastVertex - firstVertex];
         for (int i = 0; i < order.length; i++)
@@ -145,6 +152,60 @@ public class MyRandomWalkIterator<V> implements GraphWalkIterator<V> {
     //     }
     //     return new VertexSequence<>(graph, indices);
     // }
+
+    private class RandomCollection<E> {
+        private NavigableMap<Double, E> map = new TreeMap<Double, E>();
+        private Random random;
+        private double total = 0;
+
+        public RandomCollection() {
+            this(new Random());
+        }
+
+        public RandomCollection(Random random) {
+            this.random = random;
+        }
+
+        public RandomCollection<E> add(double weight, E result) {
+            if (weight <= 0) return this;
+            total += weight;
+            map.put(total, result);
+            return this;
+        }
+
+        public E next() {
+            double value = random.nextDouble() * total;
+            return map.higherEntry(value).getValue();
+        }
+    }
+
+    private int getNextVertexNode2Vec(int curr, int prevNode, double p, double q){
+
+        int[] currConnectedVertices = graph.getConnectedVertexIndices(curr);
+        int[] prevConnected = graph.getConnectedVertexIndices(prevNode);
+
+        // ArrayList<Integer> prevConnected = Arrays.asList(graph.getConnectedVertexIndices(prevNode));
+
+        RandomCollection<Integer> rc = new RandomCollection<>();
+
+        for (int v : currConnectedVertices){
+            if(v==prevNode){
+                rc.add(1/p, v);
+            }
+            else{
+                if(Arrays.asList(prevConnected).contains(v)){
+                    rc.add(1, v);
+                }
+                else{
+                    rc.add(1/q, v);
+                }
+            }
+        }
+        return rc.next();
+
+    }
+
+    
     @Override
     public IVertexSequence<V> next() {
         if (!hasNext())

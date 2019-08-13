@@ -18,7 +18,7 @@ import java.util.Random;
 import java.lang.String;
 import java.lang.Integer;
 
-public class MyRandomWalkGraphIteratorProvider<V> implements GraphWalkIteratorProvider<V> {
+public class Node2VecIteratorProvider<V> implements GraphWalkIteratorProvider<V> {
 
     private IGraph<V, ?> graph;
     private int walkLength;
@@ -27,7 +27,7 @@ public class MyRandomWalkGraphIteratorProvider<V> implements GraphWalkIteratorPr
     private int numberOfWalks;
     private Log log;
 
-    public MyRandomWalkGraphIteratorProvider(IGraph<V, ?> graph, int walkLength, long seed, NoEdgeHandling mode, int numberOfWalks, Log log) {
+    public Node2VecIteratorProvider(IGraph<V, ?> graph, int walkLength, long seed, NoEdgeHandling mode, int numberOfWalks, Log log) {
         this.graph = graph;
         this.walkLength = walkLength;
         this.rng = new Random(seed);
@@ -63,19 +63,34 @@ public class MyRandomWalkGraphIteratorProvider<V> implements GraphWalkIteratorPr
     public List<GraphWalkIterator<V>> getGraphWalkIterators(int numIterators){
         List<GraphWalkIterator<V>> list = new ArrayList<>(numIterators);
         try{
+
+            long startTime = System.currentTimeMillis();
+
             int nVertices = graph.numVertices();
             numIterators = this.numberOfWalks;
             int last = 0;
+
+
+            long elapsedTime = System.currentTimeMillis() - startTime;
+            log.info("Deepwalk: Elapsed time [16]: "+elapsedTime);
+            startTime = System.currentTimeMillis();
+
+            log.info("Number of walks: "+this.numberOfWalks);
+            log.info("Numer of iterators: "+numIterators);
             
             // for (int v = 0; v < nVertices; v++) {
             for(int i=0; i < this.numberOfWalks; i++){
 
-                GraphWalkIterator<V> iter = new RandomWalkIterator<>(this.graph, this.walkLength, this.rng.nextLong(), this.mode);
+                GraphWalkIterator<V> iter = new Node2VecIterator<>(this.graph, this.walkLength, this.rng.nextLong(), this.mode);
 
                 list.add(iter);
 
             }
             // }
+
+            elapsedTime = System.currentTimeMillis() - startTime;
+            log.info("Deepwalk: Elapsed time [17]: "+elapsedTime);
+            startTime = System.currentTimeMillis();
         }
         catch(Exception e){
             StringWriter writer = new StringWriter();

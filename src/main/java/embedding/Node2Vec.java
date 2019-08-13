@@ -48,19 +48,23 @@ import org.neo4j.logging.Log;
  * search, etc on the graph<br>
  * @author Alex Black
  */
-public class MyDeepWalk<V, E> extends GraphVectorsImpl<V, E> {
+public class Node2Vec<V, E> extends GraphVectorsImpl<V, E> {
     public static final int STATUS_UPDATE_FREQUENCY = 1000;
-    private Logger log = LoggerFactory.getLogger(MyDeepWalk.class);
+    // private Logger log = LoggerFactory.getLogger(Node2Vec.class);
+
+    private Log log;
 
     private int vectorSize;
     private int windowSize;
     private double learningRate;
     private boolean initCalled = false;
     private long seed;
-    private int nThreads = Runtime.getRuntime().availableProcessors();
+    private int nThreads = 20;
+    // private int nThreads = Runtime.getRuntime().availableProcessors();
+    
     private transient AtomicLong walkCounter = new AtomicLong(0);
 
-    public MyDeepWalk() {
+    public Node2Vec() {
 
     }
 
@@ -83,7 +87,8 @@ public class MyDeepWalk<V, E> extends GraphVectorsImpl<V, E> {
     }
 
     /** Initialize the DeepWalk model with a given graph. */
-    public void initialize(IGraph<V, E> graph) {
+    public void initialize(IGraph<V, E> graph, Log neo_log) {
+        log = neo_log;
         int nVertices = graph.numVertices();
         int[] degrees = new int[nVertices];
         for (int i = 0; i < nVertices; i++)
@@ -113,10 +118,10 @@ public class MyDeepWalk<V, E> extends GraphVectorsImpl<V, E> {
      */
     public void fit(IGraph<V, E> graph, int walkLength) {
         if (!initCalled)
-            initialize(graph);
+            initialize(graph, null);
         //First: create iterators, one for each thread
 
-        GraphWalkIteratorProvider<V> iteratorProvider = new MyRandomWalkGraphIteratorProvider<>(graph, walkLength, seed,
+        GraphWalkIteratorProvider<V> iteratorProvider = new Node2VecIteratorProvider<>(graph, walkLength, seed,
                         NoEdgeHandling.SELF_LOOP_ON_DISCONNECTED, 10, (Log) log);
 
         fit(iteratorProvider);
@@ -132,13 +137,15 @@ public class MyDeepWalk<V, E> extends GraphVectorsImpl<V, E> {
      */
     public void fit(GraphWalkIteratorProvider<V> iteratorProvider) {
         if (!initCalled)
-            throw new UnsupportedOperationException("MyDeepWalk not initialized (call initialize before fit)");
+            throw new UnsupportedOperationException("Node2Vec not initialized (call initialize before fit)");
         List<GraphWalkIterator<V>> iteratorList = iteratorProvider.getGraphWalkIterators(nThreads);
 
         PriorityScheduler scheduler = new PriorityScheduler(nThreads);
 
         List<Future<Void>> list = new ArrayList<>(iteratorList.size());
-        //log.info("Fitting Graph with {} threads", Math.max(nThreads,iteratorList.size()));
+        log.info("Number of threads "+nThreads);
+        log.info("Fitting Graph with {} threads", Math.max(nThreads,iteratorList.size()));
+        log.info("Size of the iterator [1]: "+iteratorList.size());
         for (GraphWalkIterator<V> iter : iteratorList) {
             LearningCallable c = new LearningCallable();
             c.setIterator(iter);
@@ -166,9 +173,14 @@ public class MyDeepWalk<V, E> extends GraphVectorsImpl<V, E> {
      */
     public void fit(GraphWalkIterator<V> iterator) {
         if (!initCalled)
-            throw new UnsupportedOperationException("MyDeepWalk not initialized (call initialize before fit)");
+            throw new UnsupportedOperationException("Node2Vec not initialized (call initialize before fit)");
         int walkLength = iterator.walkLength();
 
+        long startTime = System.currentTimeMillis();
+        long elapsedTime = System.currentTimeMillis() - startTime;
+
+        int idx = 0;
+        
         while (iterator.hasNext()) {
             IVertexSequence<V> sequence = iterator.next();
 
@@ -184,10 +196,17 @@ public class MyDeepWalk<V, E> extends GraphVectorsImpl<V, E> {
             if (iter % STATUS_UPDATE_FREQUENCY == 0) {
                 log.info("Processed {} random walks on graph", iter);
             }
+            idx = idx + 1;
         }
+
+        log.info("Size of the iterator [2]: "+idx);
+        log.info("walkLength: "+walkLength);
     }
 
     private void skipGram(int[] walk) {
+
+        long startTime = System.currentTimeMillis();
+
         for (int mid = windowSize; mid < walk.length - windowSize; mid++) {
             for (int pos = mid - windowSize; pos <= mid + windowSize; pos++) {
                 if (pos == mid)
@@ -197,6 +216,7 @@ public class MyDeepWalk<V, E> extends GraphVectorsImpl<V, E> {
                 lookupTable.iterate(walk[mid], walk[pos]);
             }
         }
+
     }
 
     public GraphVectorLookupTable lookupTable() {
@@ -237,8 +257,8 @@ public class MyDeepWalk<V, E> extends GraphVectorsImpl<V, E> {
             return this;
         }
 
-        public MyDeepWalk<V, E> build() {
-            MyDeepWalk<V, E> dw = new MyDeepWalk<>();
+        public Node2Vec<V, E> build() {
+            Node2Vec<V, E> dw = new Node2Vec<>();
             dw.vectorSize = vectorSize;
             dw.windowSize = windowSize;
             dw.learningRate = learningRate;

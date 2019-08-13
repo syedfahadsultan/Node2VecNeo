@@ -29,9 +29,10 @@ import org.neo4j.values.storable.LookupTablePropertyTranslator;
 
 import java.util.*;
 import java.util.stream.IntStream;
+import java.lang.System;
 import java.util.stream.Stream;
 
-public class DeepWalkProc {
+public class Node2VecProc {
 
     @Context
     public GraphDatabaseAPI api;
@@ -42,20 +43,41 @@ public class DeepWalkProc {
     @Context
     public KernelTransaction transaction;
 
-    @Procedure(value = "embedding.dl4j.deepWalk", mode = Mode.WRITE)
-    @Description("CALL embedding.dl4j.deepWalk(label:String, relationship:String, " +
+    @Procedure(value = "embedding.dl4j.node2vec", mode = Mode.WRITE)
+    @Description("CALL embedding.dl4j.node2vec(label:String, relationship:String, " +
             "{graph: 'heavy/cypher', vectorSize:128, windowSize:10, learningRate:0.01 concurrency:4, direction:'BOTH}) " +
             "YIELD nodes, iterations, loadMillis, computeMillis, writeMillis, dampingFactor, write, writeProperty" +
             " - calculates page rank and potentially writes back")
-    public Stream<PageRankScore.Stats> deepWalk(
+    public Stream<PageRankScore.Stats> node2Vec(
             @Name(value = "label", defaultValue = "") String label,
             @Name(value = "relationship", defaultValue = "") String relationship,
             @Name(value = "config", defaultValue = "{}") Map<String, Object> config) {
+
+        long startTime = System.currentTimeMillis();
         ProcedureConfiguration configuration = ProcedureConfiguration.create(config);
+
+        long elapsedTime = System.currentTimeMillis() - startTime;
+        log.info("Deepwalk: Elapsed time [1]: "+elapsedTime);
+        startTime = System.currentTimeMillis();
+
         AllocationTracker tracker = AllocationTracker.create();
 
+        elapsedTime = System.currentTimeMillis() - startTime;
+        log.info("Deepwalk: Elapsed time [2]: "+elapsedTime);
+        startTime = System.currentTimeMillis();
+
         PageRankScore.Stats.Builder statsBuilder = new PageRankScore.Stats.Builder();
+
+        elapsedTime = System.currentTimeMillis() - startTime;
+        log.info("Deepwalk: Elapsed time [3]: "+elapsedTime);
+        startTime = System.currentTimeMillis();
+
         final Graph graph = load(label, relationship, tracker, configuration.getGraphImpl(), statsBuilder, configuration);
+
+        elapsedTime = System.currentTimeMillis() - startTime;
+        log.info("Deepwalk: Elapsed time [4]: "+elapsedTime);
+        startTime = System.currentTimeMillis();
+
 
         int nodeCount = Math.toIntExact(graph.nodeCount());
         if (nodeCount == 0) {
@@ -63,11 +85,26 @@ public class DeepWalkProc {
             return Stream.empty();
         }
 
+        elapsedTime = System.currentTimeMillis() - startTime;
+        log.info("Deepwalk: Elapsed time [5]: "+elapsedTime);
+        startTime = System.currentTimeMillis();
+
+
         org.deeplearning4j.graph.graph.Graph<Integer, Integer> iGraph = buildDl4jGraph(graph);
-        DeepWalk<Integer, Integer> dw = runDeepWalk(iGraph, statsBuilder, configuration);
+        Node2Vec<Integer, Integer> dw = runDeepWalk(iGraph, statsBuilder, configuration);
+
+        elapsedTime = System.currentTimeMillis() - startTime;
+        log.info("Deepwalk: Elapsed time [6]: "+elapsedTime);
+        startTime = System.currentTimeMillis();
 
         if (configuration.isWriteFlag()) {
             final String writeProperty = configuration.getWriteProperty("deepWalk");
+
+            elapsedTime = System.currentTimeMillis() - startTime;
+            log.info("Deepwalk: Elapsed time [7]: "+elapsedTime);
+            startTime = System.currentTimeMillis();
+
+
             statsBuilder.timeWrite(() -> Exporter.of(api, graph)
                     .withLog(log)
                     .parallel(Pools.DEFAULT, configuration.getConcurrency(), TerminationFlag.wrap(transaction))
@@ -78,14 +115,19 @@ public class DeepWalkProc {
                             new DeepWalkPropertyTranslator()
                     )
             );
+
+            elapsedTime = System.currentTimeMillis() - startTime;
+            log.info("Deepwalk: Elapsed time [8]: "+elapsedTime);
+            startTime = System.currentTimeMillis();
+
         }
 
         return Stream.of(statsBuilder.build());
     }
 
 
-    @Procedure(name = "embedding.dl4j.deepWalk.stream", mode = Mode.READ)
-    @Description("CALL embedding.dl4j.deepWalk.stream(label:String, relationship:String, {graph: 'heavy/cypher', walkLength:10, vectorSize:10, windowSize:2, learningRate:0.01 concurrency:4, direction:'BOTH'}) " +
+    @Procedure(name = "embedding.dl4j.node2vec.stream", mode = Mode.READ)
+    @Description("CALL embedding.dl4j.node2vec.stream(label:String, relationship:String, {graph: 'heavy/cypher', walkLength:10, vectorSize:10, windowSize:2, learningRate:0.01 concurrency:4, direction:'BOTH'}) " +
             "YIELD nodeId, embedding - compute embeddings for each node")
     public Stream<DeepWalkResult> deepWalkStream(
             @Name(value = "label", defaultValue = "") String label,
@@ -105,7 +147,7 @@ public class DeepWalkProc {
         }
 
         org.deeplearning4j.graph.graph.Graph<Integer, Integer> iGraph = buildDl4jGraph(graph);
-        DeepWalk<Integer, Integer> dw = runDeepWalk(iGraph, statsBuilder, configuration);
+        Node2Vec<Integer, Integer> dw = runDeepWalk(iGraph, statsBuilder, configuration);
 
         return IntStream.range(0, dw.numVertices()).mapToObj(index ->
                 new DeepWalkResult(graph.toOriginalNodeId(index), dw.getVertexVector(index).toDoubleVector()));
@@ -135,13 +177,20 @@ public class DeepWalkProc {
         return iGraph;
     }
 
-    private DeepWalk<Integer, Integer> runDeepWalk(org.deeplearning4j.graph.graph.Graph<Integer, Integer> iGraph,
+    private Node2Vec<Integer, Integer> runDeepWalk(org.deeplearning4j.graph.graph.Graph<Integer, Integer> iGraph,
                                                    PageRankScore.Stats.Builder statsBuilder, ProcedureConfiguration configuration) {
+        
+        long startTime = System.currentTimeMillis();
+
         long vectorSize = configuration.get("vectorSize", 128L);
         double learningRate = configuration.get("learningRate", 0.01);
         long  windowSize = configuration.get("windowSize", 10L);
         long walkLength = configuration.get("walkSize", 40L);
         long numberOfWalks = configuration.get("numberOfWalks", 80L);
+
+        long elapsedTime = System.currentTimeMillis() - startTime;
+        log.info("Deepwalk: Elapsed time [11]: "+elapsedTime);
+        startTime = System.currentTimeMillis();
 
         Map<String, Number> params = new HashMap<>();
         params.put("vectorSize", vectorSize);
@@ -150,22 +199,40 @@ public class DeepWalkProc {
         params.put("walkLength", walkLength);
         params.put("numberOfWalks", numberOfWalks);
 
-        log.info("Executing [Fahad] DeepWalk with params: %s", params);
+        elapsedTime = System.currentTimeMillis() - startTime;
+        log.info("Deepwalk: Elapsed time [12]: "+elapsedTime);
+        startTime = System.currentTimeMillis();
+
+        log.info("Executing [Fahad] Node2Vec with params: %s", params);
 
 
-        DeepWalk.Builder<Integer, Integer> builder = new DeepWalk.Builder<>();
+        Node2Vec.Builder<Integer, Integer> builder = new Node2Vec.Builder<>();
         builder.vectorSize((int) vectorSize);
         builder.learningRate(learningRate);
         builder.windowSize((int) windowSize);
-        DeepWalk<Integer, Integer> dw = builder.build();
+        Node2Vec<Integer, Integer> dw = builder.build();
 
-        dw.initialize(iGraph);
+        elapsedTime = System.currentTimeMillis() - startTime;
+        log.info("Deepwalk: Elapsed time [13]: "+elapsedTime);
+        startTime = System.currentTimeMillis();
+
+
+        dw.initialize(iGraph, log);
         // GraphWalkIterator<Integer> iter = new RandomWalkIterator<>(iGraph,iGraph.numVertices());
         // statsBuilder.timeEval(()->dw.fit(iter));
 
-        statsBuilder.timeEval(() -> dw.fit(new MyRandomWalkGraphIteratorProvider<>(
+        elapsedTime = System.currentTimeMillis() - startTime;
+        log.info("Deepwalk: Elapsed time [14]: "+elapsedTime);
+        startTime = System.currentTimeMillis();
+
+
+        statsBuilder.timeEval(() -> dw.fit(new Node2VecIteratorProvider<>(
                 iGraph, (int) walkLength, 1,
                 NoEdgeHandling.SELF_LOOP_ON_DISCONNECTED, (int) numberOfWalks, log)));
+
+        elapsedTime = System.currentTimeMillis() - startTime;
+        log.info("Deepwalk: Elapsed time [15]: "+elapsedTime);
+        startTime = System.currentTimeMillis();
 
         return dw;
     }

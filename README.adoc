@@ -1,1 +1,5 @@
-CALL embedding.dl4j.node2vec();
+1. mvn clean package
+
+2. This will produce a jar-file,target/neo4j-ml-models-*.jar, that can be copied in the plugins directory of your Neo4j instance
+
+3. CALL embedding.dl4j.node2vec();
